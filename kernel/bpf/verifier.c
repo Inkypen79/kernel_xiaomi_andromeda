@@ -1583,18 +1583,22 @@ static int check_flow_keys_access(struct bpf_verifier_env *env, int off,
 	return 0;
 }
 
-static int check_sock_access(struct bpf_verifier_env *env, u32 regno, int off,
-			     int size, enum bpf_access_type t)
+static int check_sock_access(struct bpf_verifier_env *env, int insn_idx,
+			     u32 regno, int off, int size,
+			     enum bpf_access_type t)
 {
 	struct bpf_reg_state *regs = cur_regs(env);
 	struct bpf_reg_state *reg = &regs[regno];
-	struct bpf_insn_access_aux info;
+	struct bpf_insn_access_aux info = {};
 	if (reg->smin_value < 0) {
 		return -EACCES;
 	}
 	if (!bpf_sock_is_valid_access(off, size, t, &info)) {
 		return -EACCES;
 	}
+
+	env->insn_aux_data[insn_idx].ctx_field_size = info.ctx_field_size;
+
 	return 0;
 }
 
@@ -1977,7 +1981,7 @@ static int check_mem_access(struct bpf_verifier_env *env, int insn_idx, u32 regn
 		if (t == BPF_WRITE) {
 			return -EACCES;
 		}
-		err = check_sock_access(env, regno, off, size, t);
+		err = check_sock_access(env, insn_idx, regno, off, size, t);
 		if (!err && value_regno >= 0)
 			mark_reg_unknown(regs, value_regno);
 	} else {
