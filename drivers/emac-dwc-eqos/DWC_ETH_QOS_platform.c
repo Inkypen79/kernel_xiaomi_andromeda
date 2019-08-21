@@ -1401,6 +1401,13 @@ static struct of_device_id DWC_ETH_QOS_plat_drv_match[] = {
 	{}
 };
 
+u32 l3mdev_fib_table1 (const struct net_device *dev)
+{
+	return RT_TABLE_LOCAL;
+}
+
+const struct l3mdev_ops l3mdev_op1 = {.l3mdev_fib_table = l3mdev_fib_table1};
+
 static int DWC_ETH_QOS_configure_netdevice(struct platform_device *pdev)
 {
 	struct DWC_ETH_QOS_prv_data *pdata = NULL;
@@ -1471,6 +1478,15 @@ static int DWC_ETH_QOS_configure_netdevice(struct platform_device *pdev)
 
 	/* store emac hw version in pdata*/
 	pdata->emac_hw_version_type = dwc_eth_qos_res_data.emac_hw_version_type;
+
+#ifdef CONFIG_NET_L3_MASTER_DEV
+	if (pdata->res_data->early_eth_en && pdata->emac_hw_version_type == EMAC_HW_v2_3_1) {
+		EMACDBG("l3mdev_op1 set \n");
+		dev->priv_flags = IFF_L3MDEV_MASTER;
+		dev->l3mdev_ops = &l3mdev_op1;
+	}
+#endif
+
 
 	/* Scale the clocks to 10Mbps speed */
 	pdata->speed = SPEED_10;
