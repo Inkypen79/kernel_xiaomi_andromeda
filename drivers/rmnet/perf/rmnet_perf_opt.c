@@ -46,6 +46,12 @@ module_param(rmnet_perf_opt_oom_drops, ulong, 0644);
 MODULE_PARM_DESC(rmnet_perf_opt_oom_drops,
 		 "Number of packets dropped because we couldn't allocate SKBs");
 
+/* Stat showing how many packets were sent out uncoalesced */
+unsigned long int rmnet_perf_opt_lowmem_sends;
+module_param(rmnet_perf_opt_lowmem_sends, ulong, 0444);
+MODULE_PARM_DESC(rmnet_perf_opt_lowmem_sends,
+		 "Number of packets sent out uncoalesced due to low memory");
+
 enum {
 	RMNET_PERF_OPT_MODE_TCP,
 	RMNET_PERF_OPT_MODE_UDP,
@@ -288,6 +294,44 @@ static bool identify_flow(struct rmnet_perf_opt_flow_node *flow_node,
 	return true;
 }
 
+/* make_flow_skb_list() - Allocate and populate a list of SKBs for each packet
+ *		within a flow node
+ * @flow_node: opt structure containing packets we are allocating for
+ * @list: queue to hold the allocated SKBs
+ *
+ * Return:
+ *	- void
+ */
+static void make_flow_skb_list(struct rmnet_perf_opt_flow_node *flow_node,
+			       struct sk_buff_head *list)
+{
+	struct sk_buff *skb;
+	struct rmnet_perf_opt_pkt_node *pkt_list;
+	int i;
+	u32 pkt_len;
+
+	pkt_list = flow_node->pkt_list;
+	for (i = 0; i < flow_node->num_pkts_held; i++) {
+		pkt_len = pkt_list[i].data_end - pkt_list[i].ip_start;
+		skb = alloc_skb(pkt_len + RMNET_MAP_DEAGGR_SPACING, GFP_ATOMIC);
+		if (!skb) {
+			/* Wow, we're reeeally low on memory */
+			rmnet_perf_opt_oom_drops++;
+			continue;
+		}
+
+		skb_reserve(skb, RMNET_MAP_DEAGGR_HEADROOM);
+		skb_put_data(skb, pkt_list[i].ip_start, pkt_len);
+
+		skb->hash = flow_node->hash_value;
+		skb->sw_hash = 1;
+		skb->ip_summed = CHECKSUM_UNNECESSARY;
+
+		rmnet_perf_opt_lowmem_sends++;
+		__skb_queue_tail(list, skb);
+	}
+}
+
 /* make_flow_skb() - Allocate and populate SKB for
  *		flow node that is being pushed up the stack
  * @perf: allows access to our required global structures
@@ -509,8 +553,18 @@ void rmnet_perf_opt_flush_single_flow_node(struct rmnet_perf *perf,
 				flow_skb_fixup(skbn, flow_node);
 				rmnet_perf_core_send_skb(skbn, ep, perf, NULL);
 			} else {
-				rmnet_perf_opt_oom_drops +=
-					flow_node->num_pkts_held;
+				struct sk_buff_head list;
+
+				/* We're short on memory. Just send the
+				 * individual packets out.
+				 */
+				__skb_queue_head_init(&list);
+
+				make_flow_skb_list(flow_node, &list);
+
+				while ((skbn = __skb_dequeue(&list)))
+					rmnet_perf_core_send_skb(skbn, ep, perf,
+								 NULL);
 			}
 			/* equivalent to memsetting the flow node */
 			flow_node->num_pkts_held = 0;
