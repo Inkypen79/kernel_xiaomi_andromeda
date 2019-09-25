@@ -4290,8 +4290,8 @@ static void configure_avb_ip_rx_filtering(void)
 {
 	UINT untagged_avb_ctrl_queue = 0x2, tagged_avb_ctrl_queue_en = 0x1;
 	UINT untagged_pkt_queue = 0x0;
-	UINT multicast_queue = 0x1;
-	UINT multi_braodcast_routing_en = 0x1;
+	UINT multicast_queue = 0x0;
+	UINT multi_braodcast_routing_en = 0x0;
 
 	/* Assign queue for untagged AVB control packets*/
 	MAC_RQC1R_AVUCPQ_UDFWR(untagged_avb_ctrl_queue);
