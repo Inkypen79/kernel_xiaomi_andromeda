@@ -372,6 +372,7 @@ extern void *ipc_emac_log_ctxt;
 		"<error>"))))
 
 #define DWC_ETH_QOS_MAC_ADDR_LEN 6
+#define DWC_ETH_QOS_MAC_ADDR_STR_LEN 18
 #ifndef DWC_ETH_QOS_ENABLE_VLAN_TAG
 #define VLAN_HLEN 0
 #endif
