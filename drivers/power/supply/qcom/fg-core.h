@@ -92,11 +92,21 @@
 
 #define FULL_CAPACITY			100
 #define FULL_SOC_RAW			255
+#define FULL_SOC_REPORT_THR		250
 
 #define DEBUG_BATT_SOC			67
 #define BATT_MISS_SOC			50
 #define ESR_SOH_SOC			50
 #define EMPTY_SOC			0
+
+#define VBAT_RESTART_FG_EMPTY_UV		3700000
+#define TEMP_THR_RESTART_FG		150
+#define RESTART_FG_START_WORK_MS		1000
+#define RESTART_FG_WORK_MS		2000
+#define EMPTY_REPORT_SOC		1
+
+#define VBAT_CRITICAL_LOW_THR		2800
+#define EMPTY_DEBOUNCE_TIME_COUNT_MAX		5
 
 enum prof_load_status {
 	PROFILE_MISSING,
@@ -333,6 +343,7 @@ struct fg_batt_props {
 	int		float_volt_uv;
 	int		vbatt_full_mv;
 	int		fastchg_curr_ma;
+	int		nom_cap_uah;
 	int		*therm_coeffs;
 	int		therm_ctr_offset;
 	int		therm_pull_up_kohms;
@@ -479,6 +490,8 @@ struct fg_dev {
 	int			last_msoc;
 	int			last_recharge_volt_mv;
 	int			delta_temp_irq_count;
+	int			vbatt_full_volt_uv;
+	int			vbat_critical_low_count;
 	enum esr_filter_status	esr_flt_sts;
 	bool			profile_available;
 	enum prof_load_status	profile_load_status;
@@ -490,8 +503,11 @@ struct fg_dev {
 	bool			use_ima_single_mode;
 	bool			usb_present;
 	bool			twm_state;
+	bool			report_full;
 	bool			use_dma;
 	bool			qnovo_enable;
+	bool			empty_restart_fg;
+	bool			input_present;
 	enum fg_version		version;
 	bool			suspended;
 	struct completion	soc_update;
@@ -500,6 +516,8 @@ struct fg_dev {
 	struct work_struct	status_change_work;
 	struct work_struct	esr_sw_work;
 	struct delayed_work	sram_dump_work;
+	struct delayed_work	empty_restart_fg_work;
+	struct delayed_work	soc_work;
 	struct work_struct	esr_filter_work;
 	struct alarm		esr_filter_alarm;
 	ktime_t			last_delta_temp_time;
