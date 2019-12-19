@@ -2761,7 +2761,6 @@ static void fts_palm_store_delay(struct fts_secure_info *scr_info)
 	struct fts_ts_info *info = scr_info->fts_info;
 
 	logError(1, "%s %s IN", tag, __func__);
-	ret = fts_palm_sensor_cmd(scr_info->scr_delay.palm_value);
 	if (!ret)
 		info->palm_sensor_changed = true;
 	logError(1, "%s %s OUT", tag, __func__);
