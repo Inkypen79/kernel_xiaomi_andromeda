@@ -115,3 +115,4 @@ obj-$(CONFIG_TOUCHSCREEN_FTS)	+= focaltech_touch/
 obj-$(CONFIG_TOUCHSCREEN_ST_FTS_V521) += fts_521/
 obj-$(CONFIG_TOUCHSCREEN_GOODIX_GTX8) += goodix_driver_gt9886/
 obj-$(CONFIG_INPUT_PRESS_NDT) += ndt_core.o
+obj-$(CONFIG_TOUCHSCREEN_COMMON)	+= tp_common.o
