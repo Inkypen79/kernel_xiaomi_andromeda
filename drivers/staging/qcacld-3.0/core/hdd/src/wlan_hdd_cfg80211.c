@@ -21537,10 +21537,10 @@ static const char *hdd_ieee80211_reason_code_to_str(uint16_t reason)
  * Return: string conversion of reason code, if match found;
  *         "Unknown" otherwise.
  */
-#ifdef WLAN_DEBUG
 static const char *
 hdd_qca_reason_to_str(enum qca_disconnect_reason_codes reason)
 {
+#ifdef WLAN_DEBUG
 	switch (reason) {
 	CASE_RETURN_STRING(QCA_DISCONNECT_REASON_INTERNAL_ROAM_FAILURE);
 	CASE_RETURN_STRING(QCA_DISCONNECT_REASON_EXTERNAL_ROAM_FAILURE);
@@ -21565,6 +21565,8 @@ hdd_qca_reason_to_str(enum qca_disconnect_reason_codes reason)
 	}
 }
 #endif
+	return "";
+}
 
 /**
  * wlan_hdd_sir_mac_to_qca_reason() - Convert to qca internal disconnect reason
