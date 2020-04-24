@@ -36,6 +36,7 @@ struct dp_debug_private {
 	u32 dpcd_size;
 
 	u32 mst_con_id;
+	bool hotplug;
 
 	char exe_mode[SZ_32];
 	char reg_dump[SZ_32];
@@ -50,6 +51,7 @@ struct dp_debug_private {
 	struct dp_debug dp_debug;
 	struct dp_parser *parser;
 	struct dp_ctrl *ctrl;
+	struct dp_power *power;
 	struct mutex lock;
 };
 
@@ -199,8 +201,7 @@ static ssize_t dp_debug_write_dpcd(struct file *file,
 		goto bail;
 
 	size = min_t(size_t, count, SZ_2K);
-
-	if (size <= char_to_nib)
+	if (size < 4)
 		goto bail;
 
 	buf = kzalloc(size, GFP_KERNEL);
@@ -230,6 +231,8 @@ static ssize_t dp_debug_write_dpcd(struct file *file,
 	}
 
 	size -= 4;
+	if (size == 0)
+		goto bail;
 
 	dpcd_size = size / char_to_nib;
 	data_len = dpcd_size;
@@ -315,6 +318,7 @@ static ssize_t dp_debug_read_dpcd(struct file *file,
 			debug->aux->dpcd_updated(debug->aux);
 	}
 
+	len = min_t(size_t, count, len);
 	if (!copy_to_user(user_buff, buf, len))
 		*ppos += len;
 
@@ -348,8 +352,16 @@ static ssize_t dp_debug_write_hpd(struct file *file,
 		goto end;
 
 	hpd &= hpd_data_mask;
+	debug->hotplug = !!(hpd & BIT(0));
 
 	debug->dp_debug.psm_enabled = !!(hpd & BIT(1));
+
+	/*
+	 * print hotplug value as this code is executed
+	 * only while running in debug mode which is manually
+	 * triggered by a tester or a script.
+	 */
+	pr_info("%s\n", debug->hotplug ? "[CONNECT]" : "[DISCONNECT]");
 
 	debug->hpd->simulate_connect(debug->hpd, !!(hpd & BIT(0)));
 end:
@@ -646,6 +658,7 @@ static ssize_t dp_debug_max_pclk_khz_read(struct file *file,
 			debug->dp_debug.max_pclk_khz,
 			debug->parser->max_pclk_khz);
 
+	len = min_t(size_t, count, len);
 	if (copy_to_user(user_buff, buf, len)) {
 		kfree(buf);
 		return -EFAULT;
@@ -805,6 +818,7 @@ static ssize_t dp_debug_read_connected(struct file *file,
 
 	len += snprintf(buf, SZ_8, "%d\n", debug->hpd->hpd_high);
 
+	len = min_t(size_t, count, len);
 	if (copy_to_user(user_buff, buf, len))
 		return -EFAULT;
 
@@ -855,6 +869,7 @@ static ssize_t dp_debug_read_hdcp(struct file *file,
 
 	len = sizeof(debug->dp_debug.hdcp_status);
 
+	len = min_t(size_t, count, len);
 	if (copy_to_user(user_buff, debug->dp_debug.hdcp_status, len))
 		return -EFAULT;
 
@@ -918,6 +933,7 @@ static ssize_t dp_debug_read_edid_modes(struct file *file,
 	}
 	mutex_unlock(&connector->dev->mode_config.mutex);
 
+	len = min_t(size_t, count, len);
 	if (copy_to_user(user_buff, buf, len)) {
 		kfree(buf);
 		rc = -EFAULT;
@@ -993,6 +1009,7 @@ static ssize_t dp_debug_read_edid_modes_mst(struct file *file,
 	}
 	mutex_unlock(&connector->dev->mode_config.mutex);
 
+	len = min_t(size_t, count, len);
 	if (copy_to_user(user_buff, buf, len)) {
 		kfree(buf);
 		rc = -EFAULT;
@@ -1033,6 +1050,7 @@ static ssize_t dp_debug_read_mst_con_id(struct file *file,
 	ret = snprintf(buf, max_size, "%u\n", debug->mst_con_id);
 	len += ret;
 
+	len = min_t(size_t, count, len);
 	if (copy_to_user(user_buff, buf, len)) {
 		kfree(buf);
 		rc = -EFAULT;
@@ -1096,6 +1114,7 @@ static ssize_t dp_debug_read_mst_conn_info(struct file *file,
 	}
 	mutex_unlock(&debug->dp_debug.dp_mst_connector_list.lock);
 
+	len = min_t(size_t, count, len);
 	if (copy_to_user(user_buff, buf, len)) {
 		kfree(buf);
 		rc = -EFAULT;
@@ -1185,6 +1204,7 @@ static ssize_t dp_debug_read_info(struct file *file, char __user *user_buff,
 	if (dp_debug_check_buffer_overflow(rc, &max_size, &len))
 		goto error;
 
+	len = min_t(size_t, count, len);
 	if (copy_to_user(user_buff, buf, len))
 		goto error;
 
@@ -1217,6 +1237,7 @@ static ssize_t dp_debug_bw_code_read(struct file *file,
 	len += snprintf(buf + len, (SZ_4K - len),
 			"max_bw_code = %d\n", debug->panel->max_bw_code);
 
+	len = min_t(size_t, count, len);
 	if (copy_to_user(user_buff, buf, len)) {
 		kfree(buf);
 		return -EFAULT;
@@ -1242,6 +1263,7 @@ static ssize_t dp_debug_tpg_read(struct file *file,
 
 	len += snprintf(buf, SZ_8, "%d\n", debug->dp_debug.tpg_state);
 
+	len = min_t(size_t, count, len);
 	if (copy_to_user(user_buff, buf, len))
 		return -EFAULT;
 
@@ -1432,6 +1454,7 @@ static ssize_t dp_debug_read_hdr(struct file *file,
 			goto error;
 	}
 
+	len = min_t(size_t, count, len);
 	if (copy_to_user(user_buff, buf, len)) {
 		kfree(buf);
 		rc = -EFAULT;
@@ -1459,13 +1482,22 @@ static void dp_debug_set_sim_mode(struct dp_debug_private *debug, bool sim)
 		}
 
 		debug->dp_debug.sim_mode = true;
+		debug->power->sim_mode = true;
 		debug->aux->set_sim_mode(debug->aux, true,
 			debug->edid, debug->dpcd);
 	} else {
-		debug->aux->abort(debug->aux);
-		debug->ctrl->abort(debug->ctrl);
+
+		if (debug->hotplug) {
+			pr_warn("sim mode off before hotplug disconnect\n");
+			debug->hpd->simulate_connect(debug->hpd, false);
+			debug->hotplug = false;
+		}
+
+		debug->aux->abort(debug->aux, false);
+		debug->ctrl->abort(debug->ctrl, false);
 
 		debug->aux->set_sim_mode(debug->aux, false, NULL, NULL);
+		debug->power->sim_mode = false;
 		debug->dp_debug.sim_mode = false;
 
 		debug->panel->set_edid(debug->panel, 0);
@@ -1607,6 +1639,7 @@ static ssize_t dp_debug_read_dump(struct file *file,
 	print_hex_dump(KERN_DEBUG, prefix, DUMP_PREFIX_NONE,
 		16, 4, buf, len, false);
 
+	len = min_t(size_t, count, len);
 	if (copy_to_user(user_buff, buf, len))
 		return -EFAULT;
 
@@ -1941,6 +1974,17 @@ static int dp_debug_init(struct dp_debug *dp_debug)
 		goto error_remove_dir;
 	}
 
+	file = debugfs_create_bool("hdcp_wait_sink_sync", 0644, dir,
+			&debug->dp_debug.hdcp_wait_sink_sync);
+
+	if (IS_ERR_OR_NULL(file)) {
+		rc = PTR_ERR(file);
+		pr_err("[%s] debugfs hdcp_wait_sink_sync failed, rc=%d\n",
+		       DEBUG_NAME, rc);
+		goto error_remove_dir;
+	}
+
+
 	file = debugfs_create_bool("dsc_feature_enable", 0644, dir,
 			&debug->parser->dsc_feature_enable);
 	if (IS_ERR_OR_NULL(file)) {
@@ -2038,6 +2082,7 @@ struct dp_debug *dp_debug_get(struct dp_debug_in *in)
 	debug->catalog = in->catalog;
 	debug->parser = in->parser;
 	debug->ctrl = in->ctrl;
+	debug->power = in->power;
 
 	dp_debug = &debug->dp_debug;
 	dp_debug->vdisplay = 0;

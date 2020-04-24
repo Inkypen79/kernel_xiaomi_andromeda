@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -823,12 +823,14 @@ int msm_vdec_inst_init(struct msm_vidc_inst *inst)
 		inst->decode_batching = true;
 
 		mutex_lock(&core->lock);
-
 		list_for_each_entry(temp, &core->instances, list) {
-			if (temp != inst && temp->state != MSM_VIDC_CORE_INVALID &&
-				is_decode_session(temp) && !is_thumbnail_session(temp)) {
+			if (temp != inst &&
+				temp->state != MSM_VIDC_CORE_INVALID &&
+				is_decode_session(temp) &&
+				!is_thumbnail_session(temp)) {
 				inst->decode_batching = false;
-				dprintk(VIDC_DBG, "decode-batching disabled in multiple sessions\n");
+				dprintk(VIDC_DBG,
+					"decode-batching disabled in multiple sessions\n");
 				break;
 			}
 		}

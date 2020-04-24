@@ -1,4 +1,4 @@
-/* Copyright (c) 2015-2018, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -32,7 +32,7 @@
 #define GSI_EVT_RING_MAX  24
 #define GSI_NO_EVT_ERINDEX 31
 
-#define gsi_readl(c)	({ u32 __v = readl_relaxed(c); __iormb(); __v; })
+#define gsi_readl(c)	(readl(c))
 #define gsi_writel(v, c)	({ __iowmb(); writel_relaxed((v), (c)); })
 
 #define GSI_IPC_LOGGING(buf, fmt, args...) \
@@ -90,6 +90,7 @@ enum gsi_chan_state {
 	GSI_CHAN_STATE_STARTED = 0x2,
 	GSI_CHAN_STATE_STOPPED = 0x3,
 	GSI_CHAN_STATE_STOP_IN_PROC = 0x4,
+	GSI_CHAN_STATE_FLOW_CONTROL = 0x5,
 	GSI_CHAN_STATE_ERROR = 0xf
 };
 

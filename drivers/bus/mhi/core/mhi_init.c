@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2018-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1160,6 +1160,10 @@ int of_register_mhi_controller(struct mhi_controller *mhi_cntrl)
 	mhi_dev->mhi_cntrl = mhi_cntrl;
 	dev_set_name(&mhi_dev->dev, "%04x_%02u.%02u.%02u", mhi_dev->dev_id,
 		     mhi_dev->domain, mhi_dev->bus, mhi_dev->slot);
+
+	/* init wake source */
+	device_init_wakeup(&mhi_dev->dev, true);
+
 	ret = device_add(&mhi_dev->dev);
 	if (ret)
 		goto error_add_dev;
@@ -1340,7 +1344,7 @@ static int mhi_driver_probe(struct device *dev)
 	int ret;
 
 	/* bring device out of lpm */
-	ret = mhi_device_get_sync(mhi_dev);
+	ret = mhi_device_get_sync(mhi_dev, 0);
 	if (ret)
 		return ret;
 
@@ -1388,7 +1392,7 @@ static int mhi_driver_probe(struct device *dev)
 		mhi_prepare_for_transfer(mhi_dev);
 
 exit_probe:
-	mhi_device_put(mhi_dev);
+	mhi_device_put(mhi_dev, 0);
 
 	return ret;
 }
@@ -1466,7 +1470,7 @@ static int mhi_driver_remove(struct device *dev)
 	/* relinquish any pending votes */
 	read_lock_bh(&mhi_cntrl->pm_lock);
 	while (atomic_read(&mhi_dev->dev_wake))
-		mhi_device_put(mhi_dev);
+		mhi_device_put(mhi_dev, 0);
 	read_unlock_bh(&mhi_cntrl->pm_lock);
 
 	return 0;

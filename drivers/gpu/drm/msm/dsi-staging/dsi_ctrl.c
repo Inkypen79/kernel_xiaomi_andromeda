@@ -41,24 +41,6 @@
 
 #define CEIL(x, y)              (((x) + ((y)-1)) / (y))
 
-#define TICKS_IN_MICRO_SECOND    1000000
-
-/**
- * enum dsi_ctrl_driver_ops - controller driver ops
- */
-enum dsi_ctrl_driver_ops {
-	DSI_CTRL_OP_POWER_STATE_CHANGE,
-	DSI_CTRL_OP_CMD_ENGINE,
-	DSI_CTRL_OP_VID_ENGINE,
-	DSI_CTRL_OP_HOST_ENGINE,
-	DSI_CTRL_OP_CMD_TX,
-	DSI_CTRL_OP_HOST_INIT,
-	DSI_CTRL_OP_TPG,
-	DSI_CTRL_OP_PHY_SW_RESET,
-	DSI_CTRL_OP_ASYNC_TIMING,
-	DSI_CTRL_OP_MAX
-};
-
 struct dsi_ctrl_list_item {
 	struct dsi_ctrl *ctrl;
 	struct list_head list;
@@ -129,7 +111,7 @@ static ssize_t debugfs_state_info_read(struct file *file,
 			dsi_ctrl->clk_freq.pix_clk_rate,
 			dsi_ctrl->clk_freq.esc_clk_rate);
 
-	/* TODO: make sure that this does not exceed 4K */
+	len = min_t(size_t, len, SZ_4K);
 	if (copy_to_user(buff, buf, len)) {
 		kfree(buf);
 		return -EFAULT;
@@ -184,8 +166,7 @@ static ssize_t debugfs_reg_dump_read(struct file *file,
 		return rc;
 	}
 
-
-	/* TODO: make sure that this does not exceed 4K */
+	len = min_t(size_t, len, SZ_4K);
 	if (copy_to_user(buff, buf, len)) {
 		kfree(buf);
 		return -EFAULT;
@@ -833,7 +814,7 @@ static int dsi_ctrl_update_link_freqs(struct dsi_ctrl *dsi_ctrl,
 {
 	int rc = 0;
 	u32 num_of_lanes = 0;
-	u32 bpp, refresh_rate = TICKS_IN_MICRO_SECOND;
+	u32 bpp;
 	u64 h_period, v_period, bit_rate, pclk_rate, bit_rate_per_lane,
 	    byte_clk_rate;
 	struct dsi_host_common_cfg *host_cfg = &config->common_config;
@@ -857,14 +838,9 @@ static int dsi_ctrl_update_link_freqs(struct dsi_ctrl *dsi_ctrl,
 
 	if (config->bit_clk_rate_hz_override == 0) {
 		h_period = DSI_H_TOTAL_DSC(timing);
+		h_period += timing->overlap_pixels;
 		v_period = DSI_V_TOTAL(timing);
-
-		if (config->panel_mode == DSI_OP_CMD_MODE)
-			do_div(refresh_rate, timing->mdp_transfer_time_us);
-		else
-			refresh_rate = timing->refresh_rate;
-
-		bit_rate = h_period * v_period * refresh_rate * bpp;
+		bit_rate = h_period * v_period * timing->refresh_rate * bpp;
 	} else {
 		bit_rate = config->bit_clk_rate_hz_override * num_of_lanes;
 	}
@@ -2627,27 +2603,37 @@ int dsi_ctrl_host_timing_update(struct dsi_ctrl *dsi_ctrl)
 }
 
 /**
- * dsi_ctrl_update_host_init_state() - Update the host initialization state.
+ * dsi_ctrl_update_host_state() - Update the host state.
  * @dsi_ctrl:        DSI controller handle.
+ * @op:            ctrl driver ops
  * @enable:        boolean signifying host state.
  *
- * Update the host initialization status only while exiting from ulps during
+ * Update the host status only while exiting from ulps during
  * suspend state.
  *
  * Return: error code.
  */
-int dsi_ctrl_update_host_init_state(struct dsi_ctrl *dsi_ctrl, bool enable)
+int dsi_ctrl_update_host_state(struct dsi_ctrl *dsi_ctrl,
+			       enum dsi_ctrl_driver_ops op, bool enable)
 {
 	int rc = 0;
 	u32 state = enable ? 0x1 : 0x0;
 
-	rc = dsi_ctrl_check_state(dsi_ctrl, DSI_CTRL_OP_HOST_INIT, state);
+	if (!dsi_ctrl)
+		return rc;
+
+	mutex_lock(&dsi_ctrl->ctrl_lock);
+	rc = dsi_ctrl_check_state(dsi_ctrl, op, state);
 	if (rc) {
 		pr_err("[DSI_%d] Controller state check failed, rc=%d\n",
 		       dsi_ctrl->cell_index, rc);
+		mutex_unlock(&dsi_ctrl->ctrl_lock);
 		return rc;
 	}
-	dsi_ctrl_update_state(dsi_ctrl, DSI_CTRL_OP_HOST_INIT, state);
+
+	dsi_ctrl_update_state(dsi_ctrl, op, state);
+	mutex_unlock(&dsi_ctrl->ctrl_lock);
+
 	return rc;
 }
 
@@ -2736,6 +2722,16 @@ void dsi_ctrl_isr_configure(struct dsi_ctrl *dsi_ctrl, bool enable)
 	else
 		_dsi_ctrl_destroy_isr(dsi_ctrl);
 
+	mutex_unlock(&dsi_ctrl->ctrl_lock);
+}
+
+void dsi_ctrl_hs_req_sel(struct dsi_ctrl *dsi_ctrl, bool sel_phy)
+{
+	if (!dsi_ctrl)
+		return;
+
+	mutex_lock(&dsi_ctrl->ctrl_lock);
+	dsi_ctrl->hw.ops.hs_req_sel(&dsi_ctrl->hw, sel_phy);
 	mutex_unlock(&dsi_ctrl->ctrl_lock);
 }
 
@@ -2901,10 +2897,12 @@ int dsi_ctrl_update_host_config(struct dsi_ctrl *ctrl,
 
 	pr_debug("[DSI_%d]Host config updated\n", ctrl->cell_index);
 	memcpy(&ctrl->host_config, config, sizeof(ctrl->host_config));
-	ctrl->mode_bounds.x = ctrl->host_config.video_timing.h_active *
-			ctrl->horiz_index;
+	ctrl->mode_bounds.x = (ctrl->host_config.video_timing.h_active +
+			ctrl->host_config.video_timing.overlap_pixels) *
+						 ctrl->horiz_index;
 	ctrl->mode_bounds.y = 0;
-	ctrl->mode_bounds.w = ctrl->host_config.video_timing.h_active;
+	ctrl->mode_bounds.w = ctrl->host_config.video_timing.h_active +
+				ctrl->host_config.video_timing.overlap_pixels;
 	ctrl->mode_bounds.h = ctrl->host_config.video_timing.v_active;
 	memcpy(&ctrl->roi, &ctrl->mode_bounds, sizeof(ctrl->mode_bounds));
 	ctrl->modeupdated = true;

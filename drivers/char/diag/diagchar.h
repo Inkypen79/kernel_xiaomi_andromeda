@@ -295,6 +295,7 @@ do {						\
 #define DIAG_CNTL_TYPE		2
 #define DIAG_DCI_TYPE		3
 
+#define MAX_DCI_CLIENTS		10
 /*
  * List of diag ids
  * 0 is reserved for unknown diag id, 1 for apps, diag ids
@@ -309,6 +310,19 @@ enum remote_procs {
 	MDM2 = 2,
 	QSC = 5,
 };
+#define DIAG_MD_LOCAL		0
+#define DIAG_MD_LOCAL_LAST	1
+#define DIAG_MD_BRIDGE_BASE	DIAG_MD_LOCAL_LAST
+#define DIAG_MD_MDM		(DIAG_MD_BRIDGE_BASE)
+#define DIAG_MD_MDM2		(DIAG_MD_BRIDGE_BASE + 1)
+#define DIAG_MD_SMUX		(DIAG_MD_BRIDGE_BASE + 2)
+#define DIAG_MD_BRIDGE_LAST	(DIAG_MD_BRIDGE_BASE + 3)
+
+#ifndef CONFIG_DIAGFWD_BRIDGE_CODE
+#define NUM_DIAG_MD_DEV		DIAG_MD_LOCAL_LAST
+#else
+#define NUM_DIAG_MD_DEV		DIAG_MD_BRIDGE_LAST
+#endif
 
 struct diag_pkt_header_t {
 	uint8_t cmd_code;
@@ -484,12 +498,14 @@ struct diag_logging_mode_param_t {
 	uint8_t pd_val;
 	uint8_t reserved;
 	int peripheral;
+	int device_mask;
 } __packed;
 
 struct diag_query_pid_t {
 	uint32_t peripheral_mask;
 	uint32_t pd_mask;
 	int pid;
+	int device_mask;
 };
 
 struct diag_con_all_param_t {
@@ -499,7 +515,7 @@ struct diag_con_all_param_t {
 
 struct diag_md_session_t {
 	int pid;
-	int peripheral_mask;
+	int peripheral_mask[NUM_DIAG_MD_DEV];
 	uint8_t hdlc_disabled;
 	uint8_t msg_mask_tbl_count;
 	struct timer_list hdlc_reset_timer;
@@ -598,8 +614,9 @@ struct diagchar_dev {
 	struct list_head dci_req_list;
 	struct list_head dci_client_list;
 	int dci_tag;
-	int dci_client_id;
+	int dci_client_id[MAX_DCI_CLIENTS];
 	struct mutex dci_mutex;
+	struct mutex rpmsginfo_mutex[NUM_PERIPHERALS];
 	int num_dci_client;
 	unsigned char *apps_dci_buf;
 	int dci_state;
@@ -616,6 +633,7 @@ struct diagchar_dev {
 	unsigned int poolsize_dci;
 	unsigned int poolsize_user;
 	spinlock_t diagmem_lock;
+	wait_queue_head_t hdlc_wait_q;
 	/* Buffers for masks */
 	struct mutex diag_cntl_mutex;
 	/* Members for Sending response */
@@ -674,16 +692,17 @@ struct diagchar_dev {
 	uint8_t *dci_pkt_buf; /* For Apps DCI packets */
 	uint32_t dci_pkt_length;
 	int in_busy_dcipktdata;
-	int logging_mode;
-	int logging_mask;
+	int logging_mode[NUM_DIAG_MD_DEV];
+	int logging_mask[NUM_DIAG_MD_DEV];
 	int pd_logging_mode[NUM_UPD];
 	int pd_session_clear[NUM_UPD];
 	int num_pd_session;
 	int diag_id_sent[NUM_PERIPHERALS];
 	int mask_check;
-	uint32_t md_session_mask;
-	uint8_t md_session_mode;
-	struct diag_md_session_t *md_session_map[NUM_MD_SESSIONS];
+	uint32_t md_session_mask[NUM_DIAG_MD_DEV];
+	uint8_t md_session_mode[NUM_DIAG_MD_DEV];
+	struct diag_md_session_t *md_session_map[NUM_DIAG_MD_DEV]
+					[NUM_MD_SESSIONS];
 	struct mutex md_session_lock;
 	/* Power related variables */
 	struct diag_ws_ref_t dci_ws;
@@ -717,6 +736,17 @@ extern struct diagchar_dev *driver;
 extern int wrap_enabled;
 extern uint16_t wrap_count;
 
+struct diag_apps_data_t {
+	void *buf;
+	uint32_t len;
+	int ctxt;
+	uint8_t allocated;
+	uint8_t flushed;
+};
+
+extern struct diag_apps_data_t hdlc_data;
+extern struct diag_apps_data_t non_hdlc_data;
+
 void diag_get_timestamp(char *time_str);
 void check_drain_timer(void);
 int diag_get_remote(int remote_info);
@@ -749,7 +779,9 @@ uint8_t diag_search_diagid_by_pd(uint8_t pd_val,
 void diag_record_stats(int type, int flag);
 
 struct diag_md_session_t *diag_md_session_get_pid(int pid);
-struct diag_md_session_t *diag_md_session_get_peripheral(uint8_t peripheral);
-int diag_md_session_match_pid_peripheral(int pid, uint8_t peripheral);
+struct diag_md_session_t *diag_md_session_get_peripheral(int dev_id,
+							uint8_t peripheral);
+int diag_md_session_match_pid_peripheral(int proc, int pid,
+					uint8_t peripheral);
 
 #endif

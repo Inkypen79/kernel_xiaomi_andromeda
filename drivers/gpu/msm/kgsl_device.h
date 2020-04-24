@@ -1,4 +1,4 @@
-/* Copyright (c) 2002,2007-2018, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2002,2007-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -66,6 +66,7 @@ enum kgsl_event_results {
 };
 
 #define KGSL_FLAG_WAKE_ON_TOUCH BIT(0)
+#define KGSL_FLAG_SPARSE        BIT(1)
 
 /*
  * "list" of event types for ftrace symbolic magic
@@ -564,6 +565,12 @@ static inline void kgsl_process_add_stats(struct kgsl_process_private *priv,
 	priv->stats[type].cur += size;
 	if (priv->stats[type].max < priv->stats[type].cur)
 		priv->stats[type].max = priv->stats[type].cur;
+}
+
+static inline void kgsl_process_sub_stats(struct kgsl_process_private *priv,
+	unsigned int type, uint64_t size)
+{
+	priv->stats[type].cur -= size;
 }
 
 static inline bool kgsl_is_register_offset(struct kgsl_device *device,

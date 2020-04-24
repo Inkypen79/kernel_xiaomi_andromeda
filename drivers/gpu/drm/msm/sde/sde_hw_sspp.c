@@ -1,4 +1,4 @@
-/* Copyright (c) 2015-2018, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -687,7 +687,8 @@ static void _sde_hw_sspp_setup_excl_rect(struct sde_hw_pipe *ctx,
 	u32 size, xy;
 	u32 idx;
 	u32 reg_xy, reg_size;
-	u32 excl_ctrl, enable_bit;
+	u32 excl_ctrl = BIT(0);
+	u32 enable_bit;
 
 	if (_sspp_subblk_offset(ctx, SDE_SSPP_SRC, &idx) || !excl_rect)
 		return;
@@ -707,7 +708,10 @@ static void _sde_hw_sspp_setup_excl_rect(struct sde_hw_pipe *ctx,
 	xy = (excl_rect->y << 16) | (excl_rect->x);
 	size = (excl_rect->h << 16) | (excl_rect->w);
 
-	excl_ctrl = SDE_REG_READ(c, SSPP_EXCL_REC_CTL + idx);
+	/* Set if multi-rect disabled, read+modify only if multi-rect enabled */
+	if (rect_index != SDE_SSPP_RECT_SOLO)
+		excl_ctrl = SDE_REG_READ(c, SSPP_EXCL_REC_CTL + idx);
+
 	if (!size) {
 		SDE_REG_WRITE(c, SSPP_EXCL_REC_CTL + idx,
 				excl_ctrl & ~enable_bit);
@@ -985,9 +989,15 @@ static void sde_hw_sspp_setup_cdp(struct sde_hw_pipe *ctx,
 }
 
 static void _setup_layer_ops_colorproc(struct sde_hw_pipe *c,
-		unsigned long features)
+		unsigned long features, bool is_virtual_pipe)
 {
 	int ret = 0;
+
+	if (is_virtual_pipe) {
+		features &=
+			~(BIT(SDE_SSPP_VIG_IGC) | BIT(SDE_SSPP_VIG_GAMUT));
+		c->cap->features = features;
+	}
 
 	if (test_bit(SDE_SSPP_HSIC, &features)) {
 		if (c->cap->sblk->hsic_blk.version ==
@@ -1121,7 +1131,7 @@ static void sde_hw_sspp_setup_dgm_csc(struct sde_hw_pipe *ctx,
 }
 
 static void _setup_layer_ops(struct sde_hw_pipe *c,
-		unsigned long features)
+		unsigned long features, bool is_virtual_pipe)
 {
 	int ret;
 
@@ -1186,7 +1196,7 @@ static void _setup_layer_ops(struct sde_hw_pipe *c,
 	if (test_bit(SDE_SSPP_CDP, &features))
 		c->ops.setup_cdp = sde_hw_sspp_setup_cdp;
 
-	_setup_layer_ops_colorproc(c, features);
+	_setup_layer_ops_colorproc(c, features, is_virtual_pipe);
 
 	if (test_bit(SDE_SSPP_DGM_INVERSE_PMA, &features))
 		c->ops.setup_inverse_pma = sde_hw_sspp_setup_dgm_inverse_pma;
@@ -1203,6 +1213,7 @@ static struct sde_sspp_cfg *_sspp_offset(enum sde_sspp sspp,
 		struct sde_hw_blk_reg_map *b)
 {
 	int i;
+	struct sde_sspp_cfg *cfg;
 
 	if ((sspp < SSPP_MAX) && catalog && addr && b) {
 		for (i = 0; i < catalog->sspp_count; i++) {
@@ -1212,7 +1223,14 @@ static struct sde_sspp_cfg *_sspp_offset(enum sde_sspp sspp,
 				b->length = catalog->sspp[i].len;
 				b->hwversion = catalog->hwversion;
 				b->log_mask = SDE_DBG_MASK_SSPP;
-				return &catalog->sspp[i];
+
+				cfg =  kzalloc(sizeof(*cfg), GFP_KERNEL);
+				if (!cfg)
+					return ERR_PTR(-ENOMEM);
+
+				/* Only shallow copy is needed */
+				memcpy(cfg, &catalog->sspp[i], sizeof(*cfg));
+				return cfg;
 			}
 		}
 	}
@@ -1251,7 +1269,7 @@ struct sde_hw_pipe *sde_hw_sspp_init(enum sde_sspp idx,
 	hw_pipe->mdp = &catalog->mdp[0];
 	hw_pipe->idx = idx;
 	hw_pipe->cap = cfg;
-	_setup_layer_ops(hw_pipe, hw_pipe->cap->features);
+	_setup_layer_ops(hw_pipe, hw_pipe->cap->features, is_virtual_pipe);
 
 	if (hw_pipe->ops.get_scaler_ver) {
 		hw_pipe->cap->sblk->scaler_blk.version =
@@ -1288,8 +1306,10 @@ blk_init_error:
 
 void sde_hw_sspp_destroy(struct sde_hw_pipe *ctx)
 {
-	if (ctx)
+	if (ctx) {
 		sde_hw_blk_destroy(&ctx->base);
+		kfree(ctx->cap);
+	}
 	kfree(ctx);
 }
 

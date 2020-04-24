@@ -309,9 +309,10 @@ static int qg_process_fifo(struct qpnp_qg *chip, u32 fifo_length)
 
 	/*
 	 * If there is pending data from suspend, append the new FIFO
-	 * data to it.
+	 * data to it. Only do this if we can accomadate 8 FIFOs
 	 */
-	if (chip->suspend_data) {
+	if (chip->suspend_data &&
+		(chip->kdata.fifo_length < (MAX_FIFO_LENGTH / 2))) {
 		j = chip->kdata.fifo_length; /* append the data */
 		chip->suspend_data = false;
 		qg_dbg(chip, QG_DEBUG_FIFO,
@@ -380,7 +381,7 @@ static int qg_process_accumulator(struct qpnp_qg *chip)
 		return rc;
 	}
 
-	if (!count) {
+	if (!count || count < 10) { /* Ignore small accumulator data */
 		pr_debug("No ACCUMULATOR data!\n");
 		return 0;
 	}
@@ -412,6 +413,8 @@ static int qg_process_accumulator(struct qpnp_qg *chip)
 	chip->kdata.fifo[index].interval = sample_interval;
 	chip->kdata.fifo[index].count = count;
 	chip->kdata.fifo_length++;
+	if (chip->kdata.fifo_length == MAX_FIFO_LENGTH)
+		chip->kdata.fifo_length = MAX_FIFO_LENGTH - 1;
 
 	if (chip->kdata.fifo_length == 1)	/* Only accumulator data */
 		chip->kdata.seq_no = chip->seq_no++ % U32_MAX;
@@ -1612,7 +1615,7 @@ static int qg_get_ttf_param(void *data, enum ttf_param param, int *val)
 		break;
 	case TTF_MODE:
 		if (chip->ttf->step_chg_cfg_valid)
-			*val = TTF_MODE_V_STEP_CHG;
+			*val = TTF_MODE_VBAT_STEP_CHG;
 		else
 			*val = TTF_MODE_NORMAL;
 		break;
@@ -2355,6 +2358,12 @@ static ssize_t qg_device_read(struct file *file, char __user *buf, size_t count,
 	struct qpnp_qg *chip = file->private_data;
 	unsigned long data_size = sizeof(chip->kdata);
 
+	if (count < data_size) {
+		pr_err("Invalid datasize %lu, expected lesser then %zu\n",
+							data_size, count);
+		return -EINVAL;
+	}
+
 	/* non-blocking access, return */
 	if (!chip->data_ready && (file->f_flags & O_NONBLOCK))
 		return 0;
@@ -2874,11 +2883,13 @@ use_pon_ocv:
 			goto done;
 		}
 
-		if ((full_soc > cutoff_soc) && (pon_soc > cutoff_soc))
+		if ((full_soc > cutoff_soc) && (pon_soc > cutoff_soc)) {
 			soc = DIV_ROUND_UP(((pon_soc - cutoff_soc) * 100),
 						(full_soc - cutoff_soc));
-		else
+			soc = CAP(0, 100, soc);
+		} else {
 			soc = pon_soc;
+		}
 
 		qg_dbg(chip, QG_DEBUG_PON, "v_float=%d v_cutoff=%d FULL_SOC=%d CUTOFF_SOC=%d PON_SYS_SOC=%d pon_soc=%d\n",
 			chip->bp.float_volt_uv, chip->dt.vbatt_cutoff_mv * 1000,
@@ -2938,6 +2949,39 @@ static int qg_set_wa_flags(struct qpnp_qg *chip)
 	qg_dbg(chip, QG_DEBUG_PON, "wa_flags = %x\n", chip->wa_flags);
 
 	return 0;
+}
+
+#define SDAM_MAGIC_NUMBER		0x12345678
+static int qg_sanitize_sdam(struct qpnp_qg *chip)
+{
+	int rc = 0;
+	u32 data = 0;
+
+	rc = qg_sdam_read(SDAM_MAGIC, &data);
+	if (rc < 0) {
+		pr_err("Failed to read SDAM rc=%d\n", rc);
+		return rc;
+	}
+
+	if (data == SDAM_MAGIC_NUMBER) {
+		qg_dbg(chip, QG_DEBUG_PON, "SDAM valid\n");
+	} else if (data == 0) {
+		rc = qg_sdam_write(SDAM_MAGIC, SDAM_MAGIC_NUMBER);
+		if (!rc)
+			qg_dbg(chip, QG_DEBUG_PON, "First boot. SDAM initilized\n");
+	} else {
+		/* SDAM has invalid value */
+		rc = qg_sdam_clear();
+		if (!rc) {
+			pr_err("SDAM uninitialized, SDAM reset\n");
+			rc = qg_sdam_write(SDAM_MAGIC, SDAM_MAGIC_NUMBER);
+		}
+	}
+
+	if (rc < 0)
+		pr_err("Failed in SDAM operation, rc=%d\n", rc);
+
+	return rc;
 }
 
 #define ADC_CONV_DLY_512MS		0xA
@@ -3959,6 +4003,12 @@ static int qpnp_qg_probe(struct platform_device *pdev)
 	rc = qg_sdam_init(chip->dev);
 	if (rc < 0) {
 		pr_err("Failed to initialize QG SDAM, rc=%d\n", rc);
+		return rc;
+	}
+
+	rc = qg_sanitize_sdam(chip);
+	if (rc < 0) {
+		pr_err("Failed to sanitize SDAM, rc=%d\n", rc);
 		return rc;
 	}
 

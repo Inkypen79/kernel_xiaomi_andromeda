@@ -1335,6 +1335,11 @@
 			reg = <0x94c 200>;
 		};
 
+		minidump_debug@b0c {
+			compatible = "qcom,msm-imem-minidump-debug";
+			reg = <0xb0c 0x4>;
+		};
+
 		diag_dload@c8 {
 			compatible = "qcom,msm-imem-diag-dload";
 			reg = <0xc8 200>;
@@ -2664,6 +2669,7 @@
 
 			qcom,modem_qrtr {
 				qcom,glink-channels = "IPCRTR";
+				qcom,low-latency;
 				qcom,intents = <0x800  5
 						0x2000 3
 						0x4400 2>;
@@ -2738,6 +2744,7 @@
 
 			qcom,slpi_qrtr {
 				qcom,glink-channels = "IPCRTR";
+				qcom,low-latency;
 				qcom,intents = <0x800  5
 						0x2000 3
 						0x4400 2>;

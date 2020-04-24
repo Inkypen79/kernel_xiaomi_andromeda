@@ -1,4 +1,4 @@
-/* Copyright (c)2017-2018, The Linux Foundation. All rights reserved.
+/* Copyright (c)2017-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -29,6 +29,7 @@
 #include "kgsl.h"
 #include "kgsl_hfi.h"
 #include "kgsl_trace.h"
+#include "kgsl_gmu.h"
 
 #define MIN_HBB		13
 
@@ -1440,6 +1441,8 @@ static int64_t a6xx_read_throttling_counters(struct adreno_device *adreno_dev)
 	int64_t adj = -1;
 	uint32_t counts[ADRENO_GPMU_THROTTLE_COUNTERS];
 	struct adreno_busy_data *busy = &adreno_dev->busy_data;
+	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
+	struct gmu_device *gmu = KGSL_GMU_DEVICE(device);
 
 	for (i = 0; i < ARRAY_SIZE(counts); i++) {
 		if (!adreno_dev->gpmu_throttle_counters[i])
@@ -1453,12 +1456,18 @@ static int64_t a6xx_read_throttling_counters(struct adreno_device *adreno_dev)
 	/*
 	 * The adjustment is the number of cycles lost to throttling, which
 	 * is calculated as a weighted average of the cycles throttled
-	 * at 15%, 50%, and 90%. The adjustment is negative because in A6XX,
+	 * at 5% or 15% based on GMU FW version, 50%, and 90%.
+	 * The adjustment is negative because in A6XX,
 	 * the busy count includes the throttled cycles. Therefore, we want
 	 * to remove them to prevent appearing to be busier than
 	 * we actually are.
 	 */
-	adj *= ((counts[0] * 15) + (counts[1] * 50) + (counts[2] * 90)) / 100;
+	if (GMU_VER_STEP(gmu->ver) > 0x104)
+		adj *= ((counts[0] * 5) + (counts[1] * 50) + (counts[2] * 90))
+			/ 100;
+	else
+		adj *= ((counts[0] * 15) + (counts[1] * 50) + (counts[2] * 90))
+			/ 100;
 
 	trace_kgsl_clock_throttling(0, counts[1], counts[2],
 			counts[0], adj);
@@ -2680,12 +2689,21 @@ static void a6xx_efuse_speed_bin(struct adreno_device *adreno_dev)
 	adreno_dev->speed_bin = (val & speed_bin[1]) >> speed_bin[2];
 }
 
+static void a6xx_efuse_power_features(struct adreno_device *adreno_dev)
+{
+	a6xx_efuse_speed_bin(adreno_dev);
+
+	if (!adreno_dev->speed_bin)
+		clear_bit(ADRENO_LM_CTRL, &adreno_dev->pwrctrl_flag);
+}
+
 static const struct {
 	int (*check)(struct adreno_device *adreno_dev);
 	void (*func)(struct adreno_device *adreno_dev);
 } a6xx_efuse_funcs[] = {
 	{ adreno_is_a615_family, a6xx_efuse_speed_bin },
 	{ adreno_is_a612, a6xx_efuse_speed_bin },
+	{ adreno_is_a640, a6xx_efuse_power_features },
 };
 
 static void a6xx_check_features(struct adreno_device *adreno_dev)
@@ -3023,4 +3041,5 @@ struct adreno_gpudev adreno_a6xx_gpudev = {
 	.perfcounter_init = a6xx_perfcounter_init,
 	.perfcounter_update = a6xx_perfcounter_update,
 	.coresight = {&a6xx_coresight, &a6xx_coresight_cx},
+	.snapshot_preemption = a6xx_snapshot_preemption,
 };

@@ -162,7 +162,7 @@ int f2fs_convert_inline_page(struct dnode_of_data *dn, struct page *page)
 			"%s: corrupted inline inode ino=%lx, i_addr[0]:0x%x, "
 			"run fsck to fix.",
 			__func__, dn->inode->i_ino, dn->data_blkaddr);
-		return -EINVAL;
+		return -EFSCORRUPTED;
 	}
 
 	f2fs_bug_on(F2FS_P_SB(page), PageWriteback(page));
@@ -410,7 +410,7 @@ static int f2fs_move_inline_dirents(struct inode *dir, struct page *ipage,
 			"%s: corrupted inline inode ino=%lx, i_addr[0]:0x%x, "
 			"run fsck to fix.",
 			__func__, dir->i_ino, dn.data_blkaddr);
-		err = -EINVAL;
+		err = -EFSCORRUPTED;
 		goto out;
 	}
 
@@ -683,6 +683,12 @@ int f2fs_read_inline_dir(struct file *file, struct dir_context *ctx,
 	if (IS_ERR(ipage))
 		return PTR_ERR(ipage);
 
+	/*
+	 * f2fs_readdir was protected by inode.i_rwsem, it is safe to access
+	 * ipage without page's lock held.
+	 */
+	unlock_page(ipage);
+
 	inline_dentry = inline_data_addr(inode, ipage);
 
 	make_dentry_ptr_inline(inode, &d, inline_dentry);
@@ -691,7 +697,7 @@ int f2fs_read_inline_dir(struct file *file, struct dir_context *ctx,
 	if (!err)
 		ctx->pos = d.max;
 
-	f2fs_put_page(ipage, 1);
+	f2fs_put_page(ipage, 0);
 	return err < 0 ? err : 0;
 }
 

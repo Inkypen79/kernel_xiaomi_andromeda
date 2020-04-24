@@ -449,6 +449,7 @@
 		polling-delay = <0>;
 		thermal-governor = "step_wise";
 		thermal-sensors = <&pm8150l_tz>;
+		wake-capable-sensor;
 
 		trips {
 			trip0 {
@@ -474,6 +475,7 @@
 		polling-delay = <0>;
 		thermal-governor = "low_limits_cap";
 		thermal-sensors = <&pm8150l_bcl 2>;
+		wake-capable-sensor;
 		tracks-low;
 
 		trips {
@@ -490,6 +492,7 @@
 		polling-delay = <0>;
 		thermal-governor = "low_limits_cap";
 		thermal-sensors = <&pm8150l_bcl 3>;
+		wake-capable-sensor;
 		tracks-low;
 
 		trips {
@@ -506,6 +509,7 @@
 		polling-delay = <0>;
 		thermal-governor = "low_limits_cap";
 		thermal-sensors = <&pm8150l_bcl 4>;
+		wake-capable-sensor;
 		tracks-low;
 
 		trips {

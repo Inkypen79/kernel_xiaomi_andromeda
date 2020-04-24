@@ -1816,7 +1816,7 @@ int usbpd_register_svid(struct usbpd *pd, struct usbpd_svid_handler *hdlr)
 
 		for (i = 0; i < pd->num_svids; i++) {
 			if (pd->discovered_svids[i] == hdlr->svid) {
-				hdlr->connect(hdlr);
+				hdlr->connect(hdlr, pd->peer_usb_comm);
 				hdlr->discovered = true;
 				break;
 			}
@@ -2103,7 +2103,8 @@ static void handle_vdm_rx(struct usbpd *pd, struct rx_msg *rx_msg)
 				if (svid) {
 					handler = find_svid_handler(pd, svid);
 					if (handler) {
-						handler->connect(handler);
+						handler->connect(handler,
+							pd->peer_usb_comm);
 						handler->discovered = true;
 					}
 				}

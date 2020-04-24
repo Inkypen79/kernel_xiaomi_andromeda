@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2018, Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2019, Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1014,12 +1014,27 @@ static int ufs_qcom_crypto_engine_get_status(struct ufs_hba *hba, u32 *status)
 
 	return ufs_qcom_ice_get_status(host, status);
 }
+
+static int ufs_qcom_crypto_get_pending_req_status(struct ufs_hba *hba)
+{
+	struct ufs_qcom_host *host = ufshcd_get_variant(hba);
+	int err = 0;
+
+	if (!host->ice.pdev)
+		goto out;
+
+	err = ufs_qcom_is_ice_busy(host);
+out:
+	return err;
+}
+
 #else /* !CONFIG_SCSI_UFS_QCOM_ICE */
 #define ufs_qcom_crypto_req_setup		NULL
 #define ufs_qcom_crytpo_engine_cfg_start	NULL
 #define ufs_qcom_crytpo_engine_cfg_end		NULL
 #define ufs_qcom_crytpo_engine_reset		NULL
 #define ufs_qcom_crypto_engine_get_status	NULL
+#define ufs_qcom_crypto_get_pending_req_status	NULL
 #endif /* CONFIG_SCSI_UFS_QCOM_ICE */
 
 struct ufs_qcom_dev_params {
@@ -1362,11 +1377,16 @@ static void ufs_qcom_dev_ref_clk_ctrl(struct ufs_qcom_host *host, bool enable)
 
 		/*
 		 * If we call hibern8 exit after this, we need to make sure that
-		 * device ref_clk is stable for at least 1us before the hibern8
+		 * device ref_clk is stable for a given time before the hibern8
 		 * exit command.
 		 */
-		if (enable)
-			udelay(1);
+		if (enable) {
+			if (host->hba->dev_info.quirks &
+			    UFS_DEVICE_QUIRK_WAIT_AFTER_REF_CLK_UNGATE)
+				usleep_range(50, 60);
+			else
+				udelay(1);
+		}
 
 		host->is_dev_ref_clk_enabled = enable;
 	}
@@ -2798,6 +2818,7 @@ static struct ufs_hba_crypto_variant_ops ufs_hba_crypto_variant_ops = {
 	.crypto_engine_cfg_end	= ufs_qcom_crytpo_engine_cfg_end,
 	.crypto_engine_reset	  = ufs_qcom_crytpo_engine_reset,
 	.crypto_engine_get_status = ufs_qcom_crypto_engine_get_status,
+	.crypto_get_req_status = ufs_qcom_crypto_get_pending_req_status,
 };
 
 static struct ufs_hba_pm_qos_variant_ops ufs_hba_pm_qos_variant_ops = {

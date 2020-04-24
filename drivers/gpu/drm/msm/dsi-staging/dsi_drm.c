@@ -259,14 +259,15 @@ static void dsi_bridge_pre_enable(struct drm_bridge *bridge)
 		return;
 	}
 
-	SDE_ATRACE_BEGIN("dsi_bridge_pre_enable");
+	SDE_ATRACE_BEGIN("dsi_display_prepare");
 	rc = dsi_display_prepare(c_bridge->display);
 	if (rc) {
 		pr_err("[%d] DSI display prepare failed, rc=%d\n",
 		       c_bridge->id, rc);
-		SDE_ATRACE_END("dsi_bridge_pre_enable");
+		SDE_ATRACE_END("dsi_display_prepare");
 		return;
 	}
+	SDE_ATRACE_END("dsi_display_prepare");
 
 	SDE_ATRACE_BEGIN("dsi_display_enable");
 	rc = dsi_display_enable(c_bridge->display);
@@ -279,7 +280,6 @@ static void dsi_bridge_pre_enable(struct drm_bridge *bridge)
 	drm_notifier_call_chain(DRM_EVENT_BLANK, &g_notify_data);
 
 	SDE_ATRACE_END("dsi_display_enable");
-	SDE_ATRACE_END("dsi_bridge_pre_enable");
 
 	rc = dsi_display_splash_res_cleanup(c_bridge->display);
 	if (rc)
@@ -604,6 +604,16 @@ static bool dsi_bridge_mode_fixup(struct drm_bridge *bridge,
 			(!crtc_state->active_changed ||
 			 display->is_cont_splash_enabled))
 			dsi_mode.dsi_mode_flags |= DSI_MODE_FLAG_DMS;
+
+		/* Reject seemless transition when active changed. */
+		if (crtc_state->active_changed &&
+			((dsi_mode.dsi_mode_flags & DSI_MODE_FLAG_VRR) ||
+			(dsi_mode.dsi_mode_flags & DSI_MODE_FLAG_DYN_CLK))) {
+			pr_err("seamless upon active changed 0x%x %d\n",
+				dsi_mode.dsi_mode_flags,
+				crtc_state->active_changed);
+			return false;
+		}
 	}
 
 	/* convert back to drm mode, propagating the private info & flags */
@@ -666,6 +676,7 @@ int dsi_conn_get_mode_info(struct drm_connector *connector,
 	mode_info->clk_rate = dsi_drm_find_bit_clk_rate(display, drm_mode);
 	mode_info->mdp_transfer_time_us =
 		dsi_mode.priv_info->mdp_transfer_time_us;
+	mode_info->overlap_pixels = dsi_mode.priv_info->overlap_pixels;
 
 	memcpy(&mode_info->topology, &dsi_mode.priv_info->topology,
 			sizeof(struct msm_display_topology));
