@@ -1,4 +1,4 @@
-/* Copyright (c) 2018-2019, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2018-2020, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -257,6 +257,7 @@ struct fg_gen4_chip {
 	struct cycle_counter	*counter;
 	struct cap_learning	*cl;
 	struct ttf		*ttf;
+	struct soh_profile	*sp;
 	struct device_node	*pbs_dev;
 	struct nvmem_device	*fg_nvmem;
 	struct votable		*delta_esr_irq_en_votable;
@@ -1111,10 +1112,13 @@ static int fg_gen4_get_ttf_param(void *data, enum ttf_param param, int *val)
 		return -ENODEV;
 
 	fg = &chip->fg;
-	if (fg->battery_missing)
-		return -EPERM;
 
 	switch (param) {
+	case TTF_TTE_VALID:
+		*val = 1;
+		if (fg->battery_missing || is_debug_batt_id(fg))
+			*val = 0;
+		break;
 	case TTF_MSOC:
 		rc = fg_gen4_get_prop_capacity(fg, val);
 		break;
@@ -1642,11 +1646,33 @@ static int fg_gen4_get_batt_profile(struct fg_dev *fg)
 		return -ENODATA;
 	}
 
-	if (chip->dt.multi_profile_load &&
-		chip->batt_age_level != avail_age_level) {
-		fg_dbg(fg, FG_STATUS, "Batt_age_level %d doesn't exist, using %d\n",
-			chip->batt_age_level, avail_age_level);
-		chip->batt_age_level = avail_age_level;
+	if (chip->dt.multi_profile_load) {
+		if (chip->batt_age_level != avail_age_level) {
+			fg_dbg(fg, FG_STATUS, "Batt_age_level %d doesn't exist, using %d\n",
+				chip->batt_age_level, avail_age_level);
+			chip->batt_age_level = avail_age_level;
+		}
+
+		if (!chip->sp)
+			chip->sp = devm_kzalloc(fg->dev, sizeof(*chip->sp),
+						GFP_KERNEL);
+		if (!chip->sp)
+			return -ENOMEM;
+
+		if (!chip->sp->initialized) {
+			chip->sp->batt_id_kohms = fg->batt_id_ohms / 1000;
+			chip->sp->last_batt_age_level = chip->batt_age_level;
+			chip->sp->bp_node = batt_node;
+			chip->sp->bms_psy = fg->fg_psy;
+			rc = soh_profile_init(fg->dev, chip->sp);
+			if (rc < 0) {
+				devm_kfree(fg->dev, chip->sp);
+				chip->sp = NULL;
+			} else {
+				fg_dbg(fg, FG_STATUS, "SOH profile count: %d\n",
+					chip->sp->profile_count);
+			}
+		}
 	}
 
 	rc = of_property_read_string(profile_node, "qcom,battery-type",
@@ -2516,14 +2542,14 @@ static int fg_gen4_update_maint_soc(struct fg_dev *fg)
 		goto out;
 	}
 
-	if (msoc > fg->maint_soc) {
+	if (msoc >= fg->maint_soc) {
 		/*
 		 * When the monotonic SOC goes above maintenance SOC, we should
 		 * stop showing the maintenance SOC.
 		 */
 		fg->delta_soc = 0;
 		fg->maint_soc = 0;
-	} else if (fg->maint_soc && msoc <= fg->last_msoc) {
+	} else if (fg->maint_soc && msoc < fg->last_msoc) {
 		/* MSOC is decreasing. Decrease maintenance SOC as well */
 		fg->maint_soc -= 1;
 		if (!(msoc % 10)) {
@@ -3491,6 +3517,7 @@ static bool fg_is_input_suspend(struct fg_dev *fg)
 		return false;
 }
 
+#define CENTI_FULL_SOC		10000
 static irqreturn_t fg_delta_msoc_irq_handler(int irq, void *data)
 {
 	struct fg_dev *fg = data;
@@ -3498,6 +3525,7 @@ static irqreturn_t fg_delta_msoc_irq_handler(int irq, void *data)
 	int rc, batt_soc, batt_temp, msoc_raw;
 	bool input_present = is_input_present(fg);
 	bool input_suspend = false;
+	u32 batt_soc_cp;
 
 	rc = fg_get_msoc_raw(fg, &msoc_raw);
 	if (!rc)
@@ -3520,10 +3548,14 @@ static irqreturn_t fg_delta_msoc_irq_handler(int irq, void *data)
 	if (rc < 0) {
 		pr_err("Failed to read battery temp rc: %d\n", rc);
 	} else {
-		if (chip->cl->active)
-			cap_learning_update(chip->cl, batt_temp, batt_soc,
+		if (chip->cl->active) {
+			batt_soc_cp = div64_u64(
+					(u64)(u32)batt_soc * CENTI_FULL_SOC,
+					BATT_SOC_32BIT);
+			cap_learning_update(chip->cl, batt_temp, batt_soc_cp,
 				fg->charge_status, fg->charge_done,
 				input_present, is_qnovo_en(fg));
+		}
 
 		rc = fg_gen4_slope_limit_config(chip, batt_temp);
 		if (rc < 0)
@@ -3955,6 +3987,7 @@ static void status_change_work(struct work_struct *work)
 	int rc, batt_soc, batt_temp, msoc_raw;
 	bool input_present, qnovo_en;
 	bool input_suspend = false;
+	u32 batt_soc_cp;
 
 	if (fg->battery_missing) {
 		pm_relax(fg->dev);
@@ -4009,8 +4042,9 @@ static void status_change_work(struct work_struct *work)
 		fg->charge_status, fg->charge_done,
 		(input_present & (!input_suspend)));
 
-	if (fg->charge_status != fg->prev_charge_status)
-		cap_learning_update(chip->cl, batt_temp, batt_soc,
+	batt_soc_cp = div64_u64((u64)(u32)batt_soc * CENTI_FULL_SOC,
+				BATT_SOC_32BIT);
+	cap_learning_update(chip->cl, batt_temp, batt_soc_cp,
 			fg->charge_status, fg->charge_done, input_present,
 			qnovo_en);
 
@@ -4048,7 +4082,6 @@ static void status_change_work(struct work_struct *work)
 		pr_err("Failed to validate SOC scale mode, rc=%d\n", rc);
 
 	ttf_update(chip->ttf, input_present);
-	fg->prev_charge_status = fg->charge_status;
 out:
 	fg_dbg(fg, FG_STATUS, "charge_status:%d charge_type:%d charge_done:%d\n",
 		fg->charge_status, fg->charge_type, fg->charge_done);
@@ -4442,6 +4475,8 @@ static int fg_psy_set_property(struct power_supply *psy,
 		break;
 	case POWER_SUPPLY_PROP_SOH:
 		chip->soh = pval->intval;
+		if (chip->sp)
+			soh_profile_update(chip->sp, chip->soh);
 		break;
 	case POWER_SUPPLY_PROP_CYCLE_COUNT:
 		rc = set_cycle_count(chip->counter, pval->intval);
@@ -5618,9 +5653,6 @@ static int fg_gen4_parse_dt(struct fg_gen4_chip *chip)
 	of_property_read_u32(node, "qcom,cl-min-delta-batt-soc",
 					&chip->cl->dt.min_delta_batt_soc);
 
-	chip->cl->dt.cl_wt_enable = of_property_read_bool(node,
-						"qcom,cl-wt-enable");
-
 	rc = of_property_read_u32(node, "qcom,cl-min-temp", &temp);
 	if (rc < 0)
 		chip->cl->dt.min_temp = DEFAULT_CL_MIN_TEMP_DECIDEGC;
@@ -5658,6 +5690,12 @@ static int fg_gen4_parse_dt(struct fg_gen4_chip *chip)
 		chip->cl->dt.max_cap_limit = temp;
 
 	of_property_read_u32(node, "qcom,cl-skew", &chip->cl->dt.skew_decipct);
+
+	if (of_property_read_bool(node, "qcom,cl-wt-enable")) {
+		chip->cl->dt.cl_wt_enable = true;
+		chip->cl->dt.max_start_soc = -EINVAL;
+		chip->cl->dt.min_start_soc = -EINVAL;
+	}
 
 	rc = of_property_read_u32(node, "qcom,fg-batt-temp-hot", &temp);
 	if (rc < 0)
@@ -5927,6 +5965,34 @@ int fg_get_batt_isense(struct fg_dev *fg, int *val)
 	return 0;
 }
 
+static void fg_gen4_post_init(struct fg_gen4_chip *chip)
+{
+	int i;
+	struct fg_dev *fg = &chip->fg;
+
+	if (!is_debug_batt_id(fg))
+		return;
+
+	/* Disable all wakeable IRQs for a debug battery */
+	vote(fg->delta_bsoc_irq_en_votable, DEBUG_BOARD_VOTER, false, 0);
+	vote(chip->delta_esr_irq_en_votable, DEBUG_BOARD_VOTER, false, 0);
+	vote(chip->mem_attn_irq_en_votable, DEBUG_BOARD_VOTER, false, 0);
+
+	for (i = 0; i < FG_GEN4_IRQ_MAX; i++) {
+		if (fg->irqs[i].irq && fg->irqs[i].wakeable) {
+			if (i == BSOC_DELTA_IRQ || i == ESR_DELTA_IRQ ||
+					i == MEM_ATTN_IRQ) {
+				continue;
+			} else {
+				disable_irq_wake(fg->irqs[i].irq);
+				disable_irq_nosync(fg->irqs[i].irq);
+			}
+		}
+	}
+
+	fg_dbg(fg, FG_STATUS, "Disabled wakeable irqs for debug board\n");
+}
+
 static int fg_gen4_probe(struct platform_device *pdev)
 {
 	struct fg_gen4_chip *chip;
@@ -5943,7 +6009,6 @@ static int fg_gen4_probe(struct platform_device *pdev)
 	fg->debug_mask = &fg_gen4_debug_mask;
 	fg->irqs = fg_irqs;
 	fg->charge_status = -EINVAL;
-	fg->prev_charge_status = -EINVAL;
 	fg->online_status = -EINVAL;
 	fg->batt_id_ohms = -EINVAL;
 	chip->ki_coeff_full_soc[0] = -EINVAL;
@@ -6148,6 +6213,8 @@ static int fg_gen4_probe(struct platform_device *pdev)
 	device_init_wakeup(fg->dev, true);
 	if (!fg->battery_missing)
 		schedule_delayed_work(&fg->profile_load_work, 0);
+
+	fg_gen4_post_init(chip);
 
 	schedule_delayed_work(&fg->soc_work, 0);
 

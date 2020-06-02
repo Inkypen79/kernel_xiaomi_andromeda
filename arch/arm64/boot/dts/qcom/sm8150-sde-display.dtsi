@@ -1,4 +1,4 @@
-/* Copyright (c) 2016-2019, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -579,10 +579,16 @@
 
 		clocks = <&mdss_dsi0_pll BYTECLK_MUX_0_CLK>,
 			 <&mdss_dsi0_pll PCLK_MUX_0_CLK>,
+			 <&mdss_dsi0_pll CPHY_BYTECLK_SRC_0_CLK>,
+			 <&mdss_dsi0_pll CPHY_PCLK_SRC_0_CLK>,
 			 <&mdss_dsi1_pll BYTECLK_MUX_1_CLK>,
-			 <&mdss_dsi1_pll PCLK_MUX_1_CLK>;
+			 <&mdss_dsi1_pll PCLK_MUX_1_CLK>,
+			 <&mdss_dsi1_pll CPHY_BYTECLK_SRC_1_CLK>,
+			 <&mdss_dsi1_pll CPHY_PCLK_SRC_1_CLK>;
 		clock-names = "mux_byte_clk0", "mux_pixel_clk0",
-			      "mux_byte_clk1", "mux_pixel_clk1";
+			      "cphy_byte_clk0", "cphy_pixel_clk0",
+			      "mux_byte_clk1", "mux_pixel_clk1",
+			      "cphy_byte_clk1", "cphy_pixel_clk1";
 
 		pinctrl-names = "panel_active", "panel_suspend";
 		pinctrl-0 = <&sde_dsi_active &sde_te_active>;
@@ -640,10 +646,16 @@
 
 		clocks = <&mdss_dsi0_pll BYTECLK_MUX_0_CLK>,
 			 <&mdss_dsi0_pll PCLK_MUX_0_CLK>,
+			 <&mdss_dsi0_pll CPHY_BYTECLK_SRC_0_CLK>,
+			 <&mdss_dsi0_pll CPHY_PCLK_SRC_0_CLK>,
 			 <&mdss_dsi1_pll BYTECLK_MUX_1_CLK>,
-			 <&mdss_dsi1_pll PCLK_MUX_1_CLK>;
+			 <&mdss_dsi1_pll PCLK_MUX_1_CLK>,
+			 <&mdss_dsi1_pll CPHY_BYTECLK_SRC_1_CLK>,
+			 <&mdss_dsi1_pll CPHY_PCLK_SRC_1_CLK>;
 		clock-names = "mux_byte_clk0", "mux_pixel_clk0",
-			      "mux_byte_clk1", "mux_pixel_clk1";
+			      "cphy_byte_clk0", "cphy_pixel_clk0",
+			      "mux_byte_clk1", "mux_pixel_clk1",
+			      "cphy_byte_clk1", "cphy_pixel_clk1";
 
 		pinctrl-names = "panel_active", "panel_suspend";
 		pinctrl-0 = <&sde_dsi1_active &sde_te1_active>;
