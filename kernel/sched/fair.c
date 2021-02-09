@@ -6868,7 +6868,11 @@ schedtune_cpu_margin(unsigned long util, int cpu)
 static inline long
 schedtune_task_margin(struct task_struct *task)
 {
+#ifdef CONFIG_SCHED_TUNE
 	int boost = schedtune_task_boost(task);
+#elif defined(CONFIG_UCLAMP_TASK)
+	int boost = uclamp_boosted(task);
+#endif
 	unsigned long util;
 	long margin;
 
@@ -8420,6 +8424,11 @@ static int find_energy_efficient_cpu(struct sched_domain *sd,
 				break;
 		}
 	} else {
+#ifdef CONFIG_SCHED_TUNE
+		int boosted = (schedtune_task_boost(p) > 0);
+#elif defined(CONFIG_UCLAMP_TASK)
+		int boosted = (uclamp_boosted(p) > 0);
+#endif
 		int prefer_idle;
 
 		/*
@@ -8428,8 +8437,11 @@ static int find_energy_efficient_cpu(struct sched_domain *sd,
 		 * all if(prefer_idle) blocks.
 		 */
 		prefer_idle = sched_feat(EAS_PREFER_IDLE) ?
+#ifdef CONFIG_SCHED_TUNE
 				(schedtune_prefer_idle(p) > 0) : 0;
-
+#elif defined(CONFIG_UCLAMP_TASK)
+				(uclamp_latency_sensitive(p) > 0) : 0;
+#endif
 		eenv->max_cpu_count = EAS_CPU_BKP + 1;
 
 		fbt_env.rtg_target = rtg_target;
@@ -8547,7 +8559,12 @@ static inline int wake_energy(struct task_struct *p, int prev_cpu,
 		 * Force prefer-idle tasks into the slow path, this may not happen
 		 * if none of the sd flags matched.
 		 */
-		if (schedtune_prefer_idle(p) > 0 && !sync)
+#ifdef CONFIG_SCHED_TUNE
+		if (schedtune_prefer_idle(p) > 0
+#elif defined(CONFIG_UCLAMP_TASK)
+		if (uclamp_latency_sensitive(p) > 0
+#endif
+				&& !sync)
 			return false;
 	}
 	return true;
