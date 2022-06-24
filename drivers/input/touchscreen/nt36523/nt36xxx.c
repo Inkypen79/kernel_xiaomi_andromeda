@@ -2209,6 +2209,7 @@ static void update_touchfeature_value_work(struct work_struct *work) {
 	}
 	NVT_LOG("exit");
 }
+#endif
 
 static int disable_pen_input_device(bool disable) {
 	uint8_t buf[8] = {0};
@@ -2260,6 +2261,7 @@ static void nvt_pen_charge_state_change_work(struct work_struct *work)
 	disable_pen_input_device(ts->pen_is_charge);
 }
 
+#ifdef CONFIG_TOUCHSCREEN_XIAOMI_TOUCHFEATURE
 static int nvt_set_cur_value(int nvt_mode, int nvt_value)
 {
 
@@ -3041,6 +3043,7 @@ static int32_t nvt_ts_probe(struct spi_device *client)
 	}
 	INIT_WORK(&ts->resume_work, nvt_resume_work);
 	INIT_WORK(&ts->suspend_work, nvt_suspend_work);
+#ifdef CONFIG_TOUCHSCREEN_XIAOMI_TOUCHFEATURE
 	ts->set_touchfeature_wq = create_singlethread_workqueue("nvt-set-touchfeature-queue");
 	if (!ts->set_touchfeature_wq) {
 		NVT_ERR("create set touch feature workqueue fail");
@@ -3048,6 +3051,7 @@ static int32_t nvt_ts_probe(struct spi_device *client)
 		goto err_create_set_touchfeature_work_queue;
 	}
 	INIT_WORK(&ts->set_touchfeature_work, update_touchfeature_value_work);
+#endif
 
 	ts->pen_charge_state_notifier.notifier_call = nvt_pen_charge_state_notifier_callback;
 	ret = pen_charge_state_notifier_register_client(&ts->pen_charge_state_notifier);
@@ -3128,8 +3132,10 @@ err_register_early_suspend_failed:
 	if (pen_charge_state_notifier_unregister_client(&ts->pen_charge_state_notifier))
 			NVT_ERR("Error occurred while unregistering pen charge state notifier.\n");
 err_register_pen_charge_state_failed:
+#ifdef CONFIG_TOUCHSCREEN_XIAOMI_TOUCHFEATURE
 	destroy_workqueue(ts->set_touchfeature_wq);
 err_create_set_touchfeature_work_queue:
+#endif
 	destroy_workqueue(ts->event_wq);
 err_alloc_work_thread_failed:
 #ifndef NVT_SAVE_TESTDATA_IN_FILE
@@ -3298,8 +3304,10 @@ if (pen_charge_state_notifier_unregister_client(&ts->pen_charge_state_notifier))
 
 	spi_set_drvdata(client, NULL);
 
+#ifdef CONFIG_TOUCHSCREEN_XIAOMI_TOUCHFEATURE
 	if (ts->set_touchfeature_wq)
 		destroy_workqueue(ts->set_touchfeature_wq);
+#endif
 
 	if (ts) {
 		kfree(ts);
