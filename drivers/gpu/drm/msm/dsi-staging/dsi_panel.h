@@ -223,6 +223,7 @@ struct dsi_panel {
 	enum dsi_dms_mode dms_mode;
 
 	bool sync_broadcast_en;
+	bool tddi_doubleclick_flag;
 	int power_mode;
 	enum dsi_panel_physical_type panel_type;
 
@@ -351,5 +352,7 @@ void dsi_panel_ext_bridge_put(struct dsi_panel *panel);
 int dsi_panel_set_fod_hbm(struct dsi_panel *panel, bool status);
 
 u32 dsi_panel_get_fod_dim_alpha(struct dsi_panel *panel);
+
+void dsi_panel_doubleclick_enable(bool on);
 
 #endif /* _DSI_PANEL_H_ */
