@@ -90,7 +90,9 @@ static void nvt_ts_late_resume(struct early_suspend *h);
 #endif
 static int32_t nvt_ts_suspend(struct device *dev);
 static int32_t nvt_ts_resume(struct device *dev);
+#ifdef CONFIG_TOUCHSCREEN_XIAOMI_TOUCHFEATURE
 extern int dsi_panel_lockdown_info_read(unsigned char *plockdowninfo);
+#endif
 extern void dsi_panel_doubleclick_enable(bool on);
 #ifdef CONFIG_TOUCHSCREEN_XIAOMI_TOUCHFEATURE
 static int32_t nvt_check_palm(uint8_t input_id, uint8_t *data);
@@ -2236,7 +2238,11 @@ static void get_lockdown_info(struct work_struct *work)
 	NVT_LOG("lkdown_readed = %d", ts->lkdown_readed);
 
 	if (!ts->lkdown_readed) {
+#ifdef CONFIG_TOUCHSCREEN_XIAOMI_TOUCHFEATURE
 		ret = dsi_panel_lockdown_info_read(ts->lockdown_info);
+#else
+		ret = -1;
+#endif
 		if (ret < 0) {
 			NVT_ERR("can't get lockdown info");
 		} else {
