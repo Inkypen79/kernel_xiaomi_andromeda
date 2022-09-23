@@ -392,6 +392,8 @@ DEPMOD		= depmod
 PERL		= perl
 PYTHON		= python
 CHECK		= sparse
+HOSTLDFLAGS	+= -fuse-ld=lld
+HOSTCFLAGS	+= -fuse-ld=lld
 
 # Use the wrapper for the compiler.  This wrapper scans for new
 # warnings and causes the build to stop upon encountering them
