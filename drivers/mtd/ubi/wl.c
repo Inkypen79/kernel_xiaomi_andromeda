@@ -1281,7 +1281,6 @@ int ubi_wl_put_peb(struct ubi_device *ubi, int vol_id, int lnum,
 retry:
 	spin_lock(&ubi->wl_lock);
 	e = ubi->lookuptbl[pnum];
-	e->sqnum = UBI_UNKNOWN;
 	if (!e) {
 		/*
 		 * This wl entry has been removed for some errors by other
@@ -1294,6 +1293,7 @@ retry:
 		up_read(&ubi->fm_protect);
 		return 0;
 	}
+	e->sqnum = UBI_UNKNOWN;
 	if (e == ubi->move_from) {
 		/*
 		 * User is putting the physical eraseblock which was selected to
