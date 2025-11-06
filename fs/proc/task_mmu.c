@@ -370,7 +370,7 @@ show_map_vma(struct seq_file *m, struct vm_area_struct *vma, int is_pid)
 	if (file) {
 		struct inode *inode = file_inode(vma->vm_file);
 #ifdef CONFIG_KSU_SUSFS_SUS_MAP
-		if (unlikely(inode->i_mapping->flags & BIT_SUS_MAPS) && susfs_is_current_non_root_user_app_proc()) {
+		if (unlikely(inode->i_mapping->flags & BIT_SUS_MAPS) && susfs_is_current_proc_umounted()) {
 			seq_setwidth(m, 25 + sizeof(void *) * 6 - 1);
 			seq_put_hex_ll(m, NULL, vma->vm_start, 8);
 			seq_put_hex_ll(m, "-", vma->vm_end, 8);
@@ -923,7 +923,7 @@ static int show_smap(struct seq_file *m, void *v, int is_pid)
 #ifdef CONFIG_KSU_SUSFS_SUS_MAP
 		if (vma->vm_file &&
 			unlikely(file_inode(vma->vm_file)->i_mapping->flags & BIT_SUS_MAPS) &&
-			susfs_is_current_non_root_user_app_proc())
+			susfs_is_current_proc_umounted())
 		{
 			seq_printf(m,
 				"Size:           %8lu kB\n"
@@ -983,7 +983,7 @@ bypass_orig_flow:
 #ifdef CONFIG_KSU_SUSFS_SUS_MAP
 		if (vma->vm_file &&
 			unlikely(file_inode(vma->vm_file)->i_mapping->flags & BIT_SUS_MAPS) &&
-			susfs_is_current_non_root_user_app_proc())
+			susfs_is_current_proc_umounted())
 		{
 			seq_puts(m, "VmFlags: mr mw me");
 			seq_putc(m, '\n');
@@ -1695,7 +1695,7 @@ static ssize_t pagemap_read(struct file *file, char __user *buf,
 		vma = find_vma(mm, start_vaddr);
 		if (vma && vma->vm_file) {
 			struct inode *inode = file_inode(vma->vm_file);
-			if (unlikely(inode->i_mapping->flags & BIT_SUS_MAPS) && susfs_is_current_non_root_user_app_proc()) {
+			if (unlikely(inode->i_mapping->flags & BIT_SUS_MAPS) && susfs_is_current_proc_umounted()) {
 				pm.show_pfn = false;
 				pm.buffer->pme = 0;
 			}
