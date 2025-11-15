@@ -139,6 +139,9 @@ $(shell sed -i '/^extern void __init mnt_init/a int path_umount(struct path *pat
 $(info -- KernelSU: SusFS: Adding 'int path_umount(struct path *path, int flags);' to $(srctree)/fs/internal.h)
 endif
 endif
+ifeq ($(shell grep -q "anon_inode_getfd_secure" $(srctree)/fs/anon_inodes.c; echo $$?),0)
+ccflags-y += -DKSU_HAS_GETFD_SECURE
+endif
 # Checks Samsung UH drivers
 ifeq ($(shell grep -q "CONFIG_KDP_CRED" $(srctree)/kernel/cred.c; echo $$?),0)
 ccflags-y += -DSAMSUNG_UH_DRIVER_EXIST

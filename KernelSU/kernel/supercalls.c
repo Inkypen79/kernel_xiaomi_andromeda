@@ -382,10 +382,15 @@ static int do_get_wrapper_fd(void __user *arg) {
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 12, 0)
 #define getfd_secure anon_inode_create_getfd
-#else
+#elif defined(KSU_HAS_GETFD_SECURE)
 #define getfd_secure anon_inode_getfd_secure
 #endif
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 12, 0) || defined(KSU_HAS_GETFD_SECURE)
     ret = getfd_secure("[ksu_fdwrapper]", &data->ops, data, f->f_flags, NULL);
+#else
+    ret = anon_inode_getfd("[ksu_fdwrapper]", &data->ops, data, f->f_flags);
+#endif
     if (ret < 0) {
         pr_err("ksu_fdwrapper: getfd failed: %d\n", ret);
         goto put_wrapper_data;
@@ -393,7 +398,13 @@ static int do_get_wrapper_fd(void __user *arg) {
     struct file* pf = fget(ret);
 
     struct inode* wrapper_inode = file_inode(pf);
-    struct inode_security_struct *sec = selinux_inode(wrapper_inode);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 1, 0) ||                           \
+	defined(KSU_OPTIONAL_SELINUX_INODE)
+	struct inode_security_struct *sec = selinux_inode(wrapper_inode);
+#else
+	struct inode_security_struct *sec =
+		(struct inode_security_struct *)wrapper_inode->i_security;
+#endif
     if (sec) {
         sec->sid = ksu_file_sid;
     }
