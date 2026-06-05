@@ -188,6 +188,7 @@ struct st_susfs_version {
 #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 void susfs_add_sus_path(void __user **user_info);
 void susfs_add_sus_path_loop(void __user **user_info);
+void susfs_run_sus_path_loop(void);
 #endif
 
 /* sus_mount */
